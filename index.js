@@ -335,7 +335,8 @@ app.use((req, res, next) => {
 });
 
 // Integrace s addon builderem
-app.use(builder.getRouter());
+const addonInterface = builder.getInterface();
+app.use(addonInterface);
 
 // Spuštění serveru
 app.listen(PORT, () => {
