@@ -44,7 +44,11 @@ const manifest = {
   resources: ['subtitles'],
   types: ['movie', 'series'],
   idPrefixes: ['tt'],
-  catalogs: []
+  catalogs: [],
+  behaviorHints: {
+    configurable: false,
+    configurationRequired: false
+  }
 };
 
 // Funkce pro čištění názvu filmu pro vyhledávání
@@ -321,6 +325,12 @@ app.get('/', (req, res) => {
 app.get('/manifest.json', (req, res) => {
   console.log('📋 Manifest požadavek');
   res.json(manifest);
+});
+
+// Wildcard debug endpoint - PŘED normální endpoint
+app.get('/subtitles/*', (req, res) => {
+  console.log(`🔥 WILDCARD DEBUG: ${req.url}`);
+  res.json({ subtitles: [] });
 });
 
 // Subtitles endpoint s debug loggingem
