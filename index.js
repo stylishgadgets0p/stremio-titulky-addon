@@ -42,7 +42,8 @@ const manifest = {
   description: 'Czech subtitles from titulky.com',
   resources: ['subtitles'],
   types: ['movie'],
-  idPrefixes: ['tt']
+  idPrefixes: ['tt'],
+  catalogs: []
 };
 
 // Funkce pro čištění názvu filmu pro vyhledávání
