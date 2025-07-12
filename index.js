@@ -26,7 +26,7 @@ function getLocalIP() {
 }
 
 const LOCAL_IP = getLocalIP();
-// Použij ngrok URL pokud je nastavena, jinak lokální IP
+// Použij BASE_URL pokud je nastavena, jinak lokální IP
 const BASE_URL = process.env.BASE_URL || `http://${LOCAL_IP}:${PORT}`;
 
 const app = express();
@@ -47,11 +47,12 @@ app.listen(PORT, () => {
   console.log(`Lokální adresa: http://${LOCAL_IP}:${PORT}`);
   console.log(`Addon URL: ${BASE_URL}/manifest.json`);
   
-if (process.env.BASE_URL) {
-  console.log(`🌐 Používám externí URL: ${process.env.BASE_URL}`);
-} else {
-  console.log(`⚠️  Používám lokální URL - nastavte BASE_URL proměnnou`);
-}
+  if (process.env.BASE_URL) {
+    console.log(`🌐 Používám externí URL: ${process.env.BASE_URL}`);
+  } else {
+    console.log(`⚠️  Používám lokální URL - nastavte BASE_URL proměnnou`);
+  }
+});
 
 app.get('/', (req, res) => { 
   res.send(`
@@ -59,14 +60,14 @@ app.get('/', (req, res) => {
     <p>Server běží na portu: ${PORT}</p>
     <p>Lokální adresa: http://${LOCAL_IP}:${PORT}</p>
     <p>Addon URL: <a href="${BASE_URL}/manifest.json">${BASE_URL}/manifest.json</a></p>
-    ${process.env.NGROK_URL ? `<p>🌐 Ngrok URL: ${process.env.NGROK_URL}</p>` : '<p>⚠️ Nastavte NGROK_URL proměnnou</p>'}
+    ${process.env.BASE_URL ? `<p>🌐 Externí URL: ${process.env.BASE_URL}</p>` : '<p>⚠️ Nastavte BASE_URL proměnnou</p>'}
   `); 
 });
 
 const manifest = {
-  "id": "cz.titulky.localaddon",
-  "version": "1.2.1", // Zvýšil jsem verzi
-  "name": "Titulky.cz Lokální (rozbalené)",
+  "id": "cz.titulky.railwayaddon",
+  "version": "1.3.0",
+  "name": "Titulky.cz Railway",
   "description": "Tahá a rozbaluje české titulky z titulky.cz",
   "resources": ["subtitles"],
   "types": ["movie", "series"],
@@ -79,8 +80,8 @@ const builder = new addonBuilder(manifest);
 // Funkce pro normalizaci názvu filmu pro hledání
 function normalizeTitle(title) {
   return title
-    .replace(/[^\w\s]/g, ' ') // Nahradí speciální znaky mezerami
-    .replace(/\s+/g, ' ') // Sloučí vícenásobné mezery
+    .replace(/[^\w\s]/g, ' ')
+    .replace(/\s+/g, ' ')
     .trim();
 }
 
@@ -105,7 +106,6 @@ function findDownloadLink($) {
 function findSubtitleLinks($) {
   const links = [];
   
-  // Různé možné selektory pro odkazy na titulky
   const selectors = [
     '.main-table tr a',
     '.table tr a',
@@ -131,7 +131,6 @@ builder.defineSubtitlesHandler(async ({ id }) => {
   try {
     console.log(`🔍 Zpracovávám požadavek pro: ${imdbId}`);
     
-    // Získání informací o filmu z OMDb
     const omdbResp = await axios.get(`https://www.omdbapi.com/?i=${imdbId}&apikey=${process.env.OMDB_API_KEY}`, {
       timeout: 10000
     });
@@ -143,7 +142,6 @@ builder.defineSubtitlesHandler(async ({ id }) => {
 
     console.log(`📽️  Film: ${movie.Title} (${movie.Year})`);
 
-    // Normalizace názvu pro hledání
     const normalizedTitle = normalizeTitle(movie.Title);
     const searchQuery = encodeURIComponent(`${normalizedTitle} ${movie.Year}`);
     const searchUrl = `https://www.titulky.cz/?Fulltext=${searchQuery}`;
@@ -164,7 +162,6 @@ builder.defineSubtitlesHandler(async ({ id }) => {
       throw new Error('Nenalezeny žádné titulky');
     }
 
-    // Zkusíme první nalezený link
     const firstLink = subtitleLinks[0];
     const detailUrl = firstLink.startsWith('http') ? firstLink : `https://www.titulky.cz${firstLink}`;
     
@@ -209,7 +206,6 @@ builder.defineSubtitlesHandler(async ({ id }) => {
     const filename = `${id.replace(/[^a-zA-Z0-9]/g, '_')}.srt`;
     const filepath = path.join(SUB_DIR, filename);
     
-    // Zapíšeme soubor s UTF-8 kódováním
     fs.writeFileSync(filepath, srtEntry.getData(), 'utf8');
 
     console.log(`✅ Titulky uloženy: ${filename}`);
@@ -218,7 +214,7 @@ builder.defineSubtitlesHandler(async ({ id }) => {
       subtitles: [{
         id: 'cs-titulkycz',
         lang: 'cs',
-        label: 'Titulky.cz (rozbalené)',
+        label: 'Titulky.cz (Railway)',
         url: `${BASE_URL}/sub/${filename}`
       }]
     };
@@ -229,7 +225,6 @@ builder.defineSubtitlesHandler(async ({ id }) => {
   }
 });
 
-// Endpoint pro manifest
 app.get('/manifest.json', (req, res) => {
   res.setHeader('Content-Type', 'application/json');
   res.setHeader('Access-Control-Allow-Origin', '*');
