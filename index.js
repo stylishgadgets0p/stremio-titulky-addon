@@ -74,11 +74,7 @@ async function searchTitulkycom(title, year) {
     
     // Pokus o vyhledávání - titulky.com má vyhledávací formulář
     const searchUrl = 'https://www.titulky.com/';
-    const searchParams = new URLSearchParams({
-      'search': title,
-      'year': year || ''
-    });
-
+    
     // Prvního pokusu - hlavní stránka s vyhledáváním
     const response = await axios.get(searchUrl, {
       headers: {
@@ -137,20 +133,6 @@ async function getDownloadLinks(pageUrl) {
       const text = $(element).text().trim();
       
       if (href) {
-        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
-        downloadLinks.push({
-          title: text || 'Stáhnout titulky',
-          url: fullUrl
-        });
-      }
-    });
-
-    // Alternativní hledání - někdy jsou odkazy v různých částech stránky
-    $('a').each((i, element) => {
-      const href = $(element).attr('href');
-      const text = $(element).text().trim();
-      
-      if (href && (text.includes('stáhn') || text.includes('download') || href.includes('download'))) {
         const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
         downloadLinks.push({
           title: text || 'Stáhnout titulky',
@@ -307,12 +289,55 @@ builder.defineSubtitlesHandler(async ({ type, id }) => {
 // Express server pro serving souborů
 const app = express();
 
+// CORS middleware
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', '*');
+  res.header('Access-Control-Allow-Headers', '*');
+  res.header('Access-Control-Allow-Methods', 'GET, POST, OPTIONS');
+  if (req.method === 'OPTIONS') {
+    res.sendStatus(200);
+  } else {
+    next();
+  }
+});
+
+// Cache-busting hlavičky
+app.use((req, res, next) => {
+  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.header('Pragma', 'no-cache');
+  res.header('Expires', '0');
+  next();
+});
+
 // Middleware pro statické soubory
 app.use('/subtitles', express.static(subsDir));
 
+// Základní route
+app.get('/', (req, res) => {
+  res.send('Titulky.com addon je spuštěn!');
+});
+
+// Manifest endpoint
+app.get('/manifest.json', (req, res) => {
+  console.log('📋 Manifest požadavek');
+  res.json(manifest);
+});
+
+// Subtitles endpoint
+app.get('/subtitles/:type/:id', async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    console.log(`📥 Subtitle request: ${type}/${id}`);
+    const subtitles = await getSubtitles(type, id);
+    res.json({ subtitles });
+  } catch (error) {
+    console.error('❌ Chyba při zpracování subtitles:', error);
+    res.json({ subtitles: [] });
+  }
+});
+
 // Logo endpoint
 app.get('/logo.png', (req, res) => {
-  // Vygenerování jednoduchého logo SVG
   const logoSvg = `
     <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
       <rect width="200" height="200" fill="#1a1a1a"/>
@@ -324,32 +349,6 @@ app.get('/logo.png', (req, res) => {
   
   res.setHeader('Content-Type', 'image/svg+xml');
   res.send(logoSvg);
-});
-
-// Přidání cache-busting hlaviček
-app.use((req, res, next) => {
-  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.header('Pragma', 'no-cache');
-  res.header('Expires', '0');
-  next();
-});
-
-// Integrace s addon builderem - použijeme serveHTTP
-app.get('/manifest.json', (req, res) => {
-  console.log('📋 Manifest požadavek');
-  res.setHeader('Content-Type', 'application/json');
-  res.send(JSON.stringify(manifest, null, 2));
-});
-
-app.get('/subtitles/:type/:id', async (req, res) => {
-  try {
-    const { type, id } = req.params;
-    const subtitles = await getSubtitles(type, id);
-    res.json({ subtitles });
-  } catch (error) {
-    console.error('Chyba při zpracování subtitles:', error);
-    res.json({ subtitles: [] });
-  }
 });
 
 // Spuštění serveru
