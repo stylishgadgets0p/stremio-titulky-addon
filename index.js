@@ -323,17 +323,17 @@ app.get('/manifest.json', (req, res) => {
   res.json(manifest);
 });
 
-// Subtitles endpoint
-// Zkus všechny možné cesty
-app.get('/subtitles/*/*', async (req, res) => {
-  const [type, id] = req.url.split('/').slice(2);
-  console.log(`🔥 DEBUG: URL=${req.url}, type=${type}, id=${id}`);
-  
+// Subtitles endpoint s debug loggingem
+app.get('/subtitles/:type/:id', async (req, res) => {
   try {
+    const { type, id } = req.params;
+    console.log(`🔥 DEBUG: type=${type}, id=${id}, full_url=${req.url}`);
+    console.log(`📥 Subtitle request: ${type}/${id}`);
     const subtitles = await getSubtitles(type, id);
+    console.log(`✅ Returning ${subtitles.length} subtitles`);
     res.json({ subtitles });
   } catch (error) {
-    console.error('❌ Chyba:', error);
+    console.error('❌ Chyba při zpracování subtitles:', error);
     res.json({ subtitles: [] });
   }
 });
