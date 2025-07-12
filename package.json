@@ -16,5 +16,6 @@
     "dotenv": "^17.2.0",
     "express": "^5.1.0",
     "stremio-addon-sdk": "^1.6.10"
+    "puppeteer": "^21.0.0"
   }
 }
