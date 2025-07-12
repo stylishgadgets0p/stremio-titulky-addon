@@ -330,6 +330,24 @@ app.get('/manifest.json', (req, res) => {
   res.json(manifest);
 });
 
+// Endpoint pro Stremio formát s .json a parametry
+app.get('/subtitles/:type/:id/:filename', async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    console.log(`🔥 STREMIO FORMAT: type=${type}, id=${id}`);
+    const subtitles = await getSubtitles(type, id);
+    res.json({ subtitles });
+  } catch (error) {
+    console.error('❌ Chyba:', error);
+    res.json({ subtitles: [] });
+  }
+});
+
+// Subtitles endpoint s debug loggingem (původní)
+app.get('/subtitles/:type/:id', async (req, res) => {
+  // ... stávající kód
+});
+
 // Subtitles endpoint s debug loggingem
 app.get('/subtitles/:type/:id', async (req, res) => {
   try {
