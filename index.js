@@ -10,7 +10,7 @@ const os = require('os');
 
 // Konfigurace
 const PORT = process.env.PORT || 7000;
-const OMDB_API_KEY = process.env.OMDB_API_KEY || 'your_api_key_here';
+const OMDB_API_KEY = '96c2253d';
 
 // Získání lokální IP adresy
 function getLocalIP() {
