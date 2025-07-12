@@ -34,17 +34,15 @@ if (!fs.existsSync(subsDir)) {
   fs.mkdirSync(subsDir);
 }
 
-// Definice manifestu addonu
+// Jednoduchý manifest - méně věcí = menší šanse na chybu
 const manifest = {
-  id: 'titulky.com.subtitles',
-  version: '1.4.0',
-  name: 'Titulky.com Czech/Slovak Subtitles',
-  description: 'Stahuje a rozbaluje české a slovenské titulky z titulky.com',
-  logo: `${BASE_URL}/logo.png`,
+  id: 'community.titulkycom',
+  version: '1.0.0',
+  name: 'Titulky.com',
+  description: 'Czech subtitles from titulky.com',
   resources: ['subtitles'],
-  types: ['movie', 'series'],
-  idPrefixes: ['tt'],
-  catalogs: []
+  types: ['movie'],
+  idPrefixes: ['tt']
 };
 
 // Funkce pro čištění názvu filmu pro vyhledávání
@@ -309,6 +307,14 @@ app.use((req, res, next) => {
   next();
 });
 
+// Debug middleware - loguje VŠECHNY subtitles requesty
+app.use((req, res, next) => {
+  if (req.url.includes('/subtitles')) {
+    console.log(`🔥 VŠECHNY SUBTITLES REQUESTY: ${req.method} ${req.url}`);
+  }
+  next();
+});
+
 // Middleware pro statické soubory
 app.use('/subtitles', express.static(subsDir));
 
@@ -336,21 +342,6 @@ app.get('/subtitles/:type/:id', async (req, res) => {
     console.error('❌ Chyba při zpracování subtitles:', error);
     res.json({ subtitles: [] });
   }
-});
-
-// Logo endpoint
-app.get('/logo.png', (req, res) => {
-  const logoSvg = `
-    <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
-      <rect width="200" height="200" fill="#1a1a1a"/>
-      <text x="100" y="120" font-family="Arial" font-size="24" fill="white" text-anchor="middle">
-        Titulky.com
-      </text>
-    </svg>
-  `;
-  
-  res.setHeader('Content-Type', 'image/svg+xml');
-  res.send(logoSvg);
 });
 
 // Spuštění serveru
