@@ -8,17 +8,17 @@ const path = require('path');
 const fs = require('fs');
 const os = require('os');
 
+// Konfigurace
 const PORT = process.env.PORT || 7000;
-const SUB_DIR = path.join(__dirname, 'subs');
-if (!fs.existsSync(SUB_DIR)) fs.mkdirSync(SUB_DIR);
+const OMDB_API_KEY = process.env.OMDB_API_KEY || 'your_api_key_here';
 
-// Získání IP adresy pro lokální síť
+// Získání lokální IP adresy
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
   for (const name of Object.keys(interfaces)) {
-    for (const interface of interfaces[name]) {
-      if (interface.family === 'IPv4' && !interface.internal) {
-        return interface.address;
+    for (const iface of interfaces[name]) {
+      if (iface.family === 'IPv4' && !iface.internal) {
+        return iface.address;
       }
     }
   }
@@ -26,209 +26,330 @@ function getLocalIP() {
 }
 
 const LOCAL_IP = getLocalIP();
-// Použij BASE_URL pokud je nastavena, jinak lokální IP
 const BASE_URL = process.env.BASE_URL || `http://${LOCAL_IP}:${PORT}`;
 
-const app = express();
+// Vytvoření složky pro titulky
+const subsDir = path.join(__dirname, 'subs');
+if (!fs.existsSync(subsDir)) {
+  fs.mkdirSync(subsDir);
+}
 
-// Přidej cache-busting hlavičky
-app.use((req, res, next) => {
-  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
-  res.header('Pragma', 'no-cache');
-  res.header('Expires', '0');
-  res.header('Access-Control-Allow-Origin', '*');
-  next();
-});
-
-app.use('/sub', express.static(SUB_DIR));
-
-app.listen(PORT, () => {
-  console.log(`Express server běží na portu ${PORT}`);
-  console.log(`Lokální adresa: http://${LOCAL_IP}:${PORT}`);
-  console.log(`Addon URL: ${BASE_URL}/manifest.json`);
-  
-  if (process.env.BASE_URL) {
-    console.log(`🌐 Používám externí URL: ${process.env.BASE_URL}`);
-  } else {
-    console.log(`⚠️  Používám lokální URL - nastavte BASE_URL proměnnou`);
-  }
-});
-
-app.get('/', (req, res) => { 
-  res.send(`
-    <h1>Titulky.cz Addon</h1>
-    <p>Server běží na portu: ${PORT}</p>
-    <p>Lokální adresa: http://${LOCAL_IP}:${PORT}</p>
-    <p>Addon URL: <a href="${BASE_URL}/manifest.json">${BASE_URL}/manifest.json</a></p>
-    ${process.env.BASE_URL ? `<p>🌐 Externí URL: ${process.env.BASE_URL}</p>` : '<p>⚠️ Nastavte BASE_URL proměnnou</p>'}
-  `); 
-});
-
+// Definice manifestu addonu
 const manifest = {
-  "id": "cz.titulky.railwayaddon",
-  "version": "1.3.0",
-  "name": "Titulky.cz Railway",
-  "description": "Tahá a rozbaluje české titulky z titulky.cz",
-  "resources": ["subtitles"],
-  "types": ["movie", "series"],
-  "idPrefixes": ["tt"],
-  "catalogs": []
+  id: 'titulky.com.subtitles',
+  version: '1.4.0',
+  name: 'Titulky.com Czech/Slovak Subtitles',
+  description: 'Stahuje a rozbaluje české a slovenské titulky z titulky.com',
+  logo: `${BASE_URL}/logo.png`,
+  resources: ['subtitles'],
+  types: ['movie', 'series'],
+  idPrefixes: ['tt'],
+  catalogs: []
 };
 
-const builder = new addonBuilder(manifest);
-
-// Funkce pro normalizaci názvu filmu pro hledání
-function normalizeTitle(title) {
+// Funkce pro čištění názvu filmu pro vyhledávání
+function cleanTitle(title) {
   return title
-    .replace(/[^\w\s]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+    .replace(/[^\w\s]/g, ' ')  // Nahradit speciální znaky mezerami
+    .replace(/\s+/g, ' ')      // Více mezer nahradit jednou
+    .trim()
+    .toLowerCase();
 }
 
-// Funkce pro hledání download linku s více variantami
-function findDownloadLink($) {
-  const selectors = [
-    '#download a',
-    'a[href*="download"]',
-    '.download-link',
-    'a:contains("Stáhnout")',
-    'a[href*="zip"]'
-  ];
-  
-  for (const selector of selectors) {
-    const link = $(selector).attr('href');
-    if (link) return link;
-  }
-  return null;
-}
-
-// Funkce pro hledání titulků na stránce
-function findSubtitleLinks($) {
-  const links = [];
-  
-  const selectors = [
-    '.main-table tr a',
-    '.table tr a',
-    'a[href*="id="]',
-    'a[href*="detail"]'
-  ];
-  
-  selectors.forEach(selector => {
-    $(selector).each((i, el) => {
-      const href = $(el).attr('href');
-      if (href && href.includes('id=')) {
-        links.push(href);
-      }
-    });
-  });
-  
-  return links;
-}
-
-builder.defineSubtitlesHandler(async ({ id }) => {
-  const imdbId = id;
-
+// Funkce pro získání informací o filmu z OMDB
+async function getMovieInfo(imdbId) {
   try {
-    console.log(`🔍 Zpracovávám požadavek pro: ${imdbId}`);
+    const response = await axios.get(`http://www.omdbapi.com/?i=${imdbId}&apikey=${OMDB_API_KEY}`);
+    return response.data;
+  } catch (error) {
+    console.error('Chyba při získávání dat z OMDB:', error.message);
+    return null;
+  }
+}
+
+// Funkce pro vyhledávání titulků na titulky.com
+async function searchTitulkycom(title, year) {
+  try {
+    console.log(`🔍 Hledám titulky pro: "${title}" (${year})`);
     
-    const omdbResp = await axios.get(`https://www.omdbapi.com/?i=${imdbId}&apikey=${process.env.OMDB_API_KEY}`, {
-      timeout: 10000
+    // Pokus o vyhledávání - titulky.com má vyhledávací formulář
+    const searchUrl = 'https://www.titulky.com/';
+    const searchParams = new URLSearchParams({
+      'search': title,
+      'year': year || ''
     });
-    const movie = omdbResp.data;
 
-    if (!movie || !movie.Title) {
-      throw new Error('Film nenalezen v OMDb');
-    }
-
-    console.log(`📽️  Film: ${movie.Title} (${movie.Year})`);
-
-    const normalizedTitle = normalizeTitle(movie.Title);
-    const searchQuery = encodeURIComponent(`${normalizedTitle} ${movie.Year}`);
-    const searchUrl = `https://www.titulky.cz/?Fulltext=${searchQuery}`;
-
-    console.log(`🔍 Hledám na: ${searchUrl}`);
-
+    // Prvního pokusu - hlavní stránka s vyhledáváním
     const response = await axios.get(searchUrl, {
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       },
       timeout: 10000
     });
 
     const $ = cheerio.load(response.data);
-    const subtitleLinks = findSubtitleLinks($);
     
-    if (subtitleLinks.length === 0) {
-      throw new Error('Nenalezeny žádné titulky');
-    }
-
-    const firstLink = subtitleLinks[0];
-    const detailUrl = firstLink.startsWith('http') ? firstLink : `https://www.titulky.cz${firstLink}`;
+    // Hledání odkazů na titulky v struktuře titulky.com
+    const subtitleLinks = [];
     
-    console.log(`📄 Načítám detail: ${detailUrl}`);
+    // Titulky.com má různé struktury - zkusím najít odkazy na filmy
+    $('a[href*=".htm"]').each((i, element) => {
+      const href = $(element).attr('href');
+      const text = $(element).text().trim();
+      
+      // Kontrola, jestli odkaz obsahuje název filmu
+      if (text && href && text.toLowerCase().includes(title.toLowerCase())) {
+        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
+        subtitleLinks.push({
+          title: text,
+          url: fullUrl
+        });
+      }
+    });
 
-    const detailResp = await axios.get(detailUrl, {
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+    console.log(`📋 Nalezeno ${subtitleLinks.length} potenciálních odkazů`);
+    return subtitleLinks;
+
+  } catch (error) {
+    console.error('❌ Chyba při vyhledávání na titulky.com:', error.message);
+    return [];
+  }
+}
+
+// Funkce pro získání downloadovacích odkazů z detailní stránky
+async function getDownloadLinks(pageUrl) {
+  try {
+    console.log(`🔗 Získávám download odkazy z: ${pageUrl}`);
+    
+    const response = await axios.get(pageUrl, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       },
       timeout: 10000
     });
 
-    const $$ = cheerio.load(detailResp.data);
-    const downloadHref = findDownloadLink($$);
+    const $ = cheerio.load(response.data);
+    const downloadLinks = [];
+
+    // Hledání download odkazů - titulky.com má specifickou strukturu
+    $('a[href*="download"], a[href*=".zip"], a[href*=".rar"], a[href*=".srt"]').each((i, element) => {
+      const href = $(element).attr('href');
+      const text = $(element).text().trim();
+      
+      if (href) {
+        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
+        downloadLinks.push({
+          title: text || 'Stáhnout titulky',
+          url: fullUrl
+        });
+      }
+    });
+
+    // Alternativní hledání - někdy jsou odkazy v různých částech stránky
+    $('a').each((i, element) => {
+      const href = $(element).attr('href');
+      const text = $(element).text().trim();
+      
+      if (href && (text.includes('stáhn') || text.includes('download') || href.includes('download'))) {
+        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
+        downloadLinks.push({
+          title: text || 'Stáhnout titulky',
+          url: fullUrl
+        });
+      }
+    });
+
+    console.log(`⬇️ Nalezeno ${downloadLinks.length} download odkazů`);
+    return downloadLinks;
+
+  } catch (error) {
+    console.error('❌ Chyba při získávání download odkazů:', error.message);
+    return [];
+  }
+}
+
+// Funkce pro stažení a rozbalení titulků
+async function downloadAndExtractSubtitles(downloadUrl, movieTitle) {
+  try {
+    console.log(`⬇️ Stahuji titulky z: ${downloadUrl}`);
     
-    if (!downloadHref) {
-      throw new Error('Download link not found');
-    }
-
-    const downloadUrl = downloadHref.startsWith('http') ? downloadHref : `https://www.titulky.cz${downloadHref}`;
-    console.log(`⬇️  Stahuji: ${downloadUrl}`);
-
-    const zipResp = await axios.get(downloadUrl, {
+    const response = await axios.get(downloadUrl, {
       responseType: 'arraybuffer',
-      headers: { 
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
       },
       timeout: 30000
     });
 
-    const zip = new AdmZip(zipResp.data);
-    const entries = zip.getEntries();
-    const srtEntry = entries.find(e => 
-      e.entryName.toLowerCase().endsWith('.srt') || 
-      e.entryName.toLowerCase().endsWith('.sub')
-    );
+    const fileName = `${cleanTitle(movieTitle)}_${Date.now()}`;
     
-    if (!srtEntry) {
-      throw new Error('Žádný .srt soubor v ZIPu');
+    // Zkusím různé přípony podle Content-Type
+    let fileExtension = '.zip';
+    const contentType = response.headers['content-type'];
+    if (contentType) {
+      if (contentType.includes('rar')) fileExtension = '.rar';
+      else if (contentType.includes('text')) fileExtension = '.srt';
     }
 
-    const filename = `${id.replace(/[^a-zA-Z0-9]/g, '_')}.srt`;
-    const filepath = path.join(SUB_DIR, filename);
+    const filePath = path.join(subsDir, fileName + fileExtension);
+    fs.writeFileSync(filePath, response.data);
+
+    console.log(`💾 Soubor uložen: ${filePath}`);
+
+    // Pokus o rozbalení, pokud je to archiv
+    if (fileExtension === '.zip') {
+      try {
+        const zip = new AdmZip(filePath);
+        const zipEntries = zip.getEntries();
+        
+        for (const entry of zipEntries) {
+          if (entry.entryName.endsWith('.srt') || entry.entryName.endsWith('.sub')) {
+            const extractPath = path.join(subsDir, `${fileName}_${entry.entryName}`);
+            fs.writeFileSync(extractPath, entry.getData());
+            console.log(`📂 Rozbalen soubor: ${extractPath}`);
+            
+            return `${BASE_URL}/subtitles/${fileName}_${entry.entryName}`;
+          }
+        }
+      } catch (zipError) {
+        console.log('⚠️ Soubor není ZIP archiv, zkouším jako SRT');
+      }
+    }
+
+    // Pokud to není archiv nebo rozbalení selhalo, vrátím původní soubor
+    const finalPath = path.join(subsDir, fileName + '.srt');
+    fs.renameSync(filePath, finalPath);
+    return `${BASE_URL}/subtitles/${fileName}.srt`;
+
+  } catch (error) {
+    console.error('❌ Chyba při stahování titulků:', error.message);
+    throw error;
+  }
+}
+
+// Hlavní funkce pro získání titulků
+async function getSubtitles(type, id) {
+  try {
+    console.log(`🎬 Zpracovávám ${type} s ID: ${id}`);
     
-    fs.writeFileSync(filepath, srtEntry.getData(), 'utf8');
+    // Získání informací o filmu z OMDB
+    const movieInfo = await getMovieInfo(id);
+    if (!movieInfo || movieInfo.Response === 'False') {
+      console.log('❌ Film nenalezen v OMDB');
+      return [];
+    }
 
-    console.log(`✅ Titulky uloženy: ${filename}`);
+    console.log(`🎭 Nalezen film: ${movieInfo.Title} (${movieInfo.Year})`);
 
-    return {
-      subtitles: [{
-        id: 'cs-titulkycz',
-        lang: 'cs',
-        label: 'Titulky.cz (Railway)',
-        url: `${BASE_URL}/sub/${filename}`
-      }]
-    };
+    // Vyhledání titulků na titulky.com
+    const searchResults = await searchTitulkycom(movieInfo.Title, movieInfo.Year);
+    
+    if (searchResults.length === 0) {
+      console.log('❌ Žádné titulky nenalezeny');
+      return [];
+    }
 
-  } catch (err) {
-    console.error(`❌ Chyba pro ${imdbId}:`, err.message);
+    const subtitles = [];
+
+    // Zpracování prvních několika výsledků
+    for (let i = 0; i < Math.min(searchResults.length, 3); i++) {
+      const result = searchResults[i];
+      
+      try {
+        // Získání download odkazů z detailní stránky
+        const downloadLinks = await getDownloadLinks(result.url);
+        
+        if (downloadLinks.length > 0) {
+          // Pokus o stažení prvního odkazu
+          const downloadUrl = await downloadAndExtractSubtitles(
+            downloadLinks[0].url, 
+            movieInfo.Title
+          );
+          
+          subtitles.push({
+            id: `titulkycom_${Date.now()}_${i}`,
+            url: downloadUrl,
+            lang: 'cze'
+          });
+          
+          console.log(`✅ Titulky úspěšně přidány: ${result.title}`);
+        }
+      } catch (error) {
+        console.error(`❌ Chyba při zpracování: ${result.title}`, error.message);
+        continue;
+      }
+    }
+
+    return subtitles;
+
+  } catch (error) {
+    console.error('❌ Celková chyba při získávání titulků:', error.message);
+    return [];
+  }
+}
+
+// Vytvoření addon builderu
+const builder = addonBuilder(manifest);
+
+// Definice subtitles handleru
+builder.defineSubtitlesHandler(async ({ type, id }) => {
+  console.log(`📥 Požadavek na titulky: ${type}/${id}`);
+  
+  try {
+    const subtitles = await getSubtitles(type, id);
+    return { subtitles };
+  } catch (error) {
+    console.error('❌ Chyba v subtitles handleru:', error.message);
     return { subtitles: [] };
   }
 });
 
-app.get('/manifest.json', (req, res) => {
-  res.setHeader('Content-Type', 'application/json');
-  res.setHeader('Access-Control-Allow-Origin', '*');
-  res.json(manifest);
+// Express server pro serving souborů
+const app = express();
+
+// Middleware pro statické soubory
+app.use('/subtitles', express.static(subsDir));
+
+// Logo endpoint
+app.get('/logo.png', (req, res) => {
+  // Vygenerování jednoduchého logo SVG
+  const logoSvg = `
+    <svg width="200" height="200" xmlns="http://www.w3.org/2000/svg">
+      <rect width="200" height="200" fill="#1a1a1a"/>
+      <text x="100" y="120" font-family="Arial" font-size="24" fill="white" text-anchor="middle">
+        Titulky.com
+      </text>
+    </svg>
+  `;
+  
+  res.setHeader('Content-Type', 'image/svg+xml');
+  res.send(logoSvg);
+});
+
+// Přidání cache-busting hlaviček
+app.use((req, res, next) => {
+  res.header('Cache-Control', 'no-cache, no-store, must-revalidate');
+  res.header('Pragma', 'no-cache');
+  res.header('Expires', '0');
+  next();
+});
+
+// Integrace s addon builderem
+app.use(builder.getRouter());
+
+// Spuštění serveru
+app.listen(PORT, () => {
+  console.log(`🚀 Express server běží na portu ${PORT}`);
+  console.log(`🌐 Lokální adresa: http://${LOCAL_IP}:${PORT}`);
+  
+  if (process.env.BASE_URL) {
+    console.log(`🌐 Používám externí URL: ${process.env.BASE_URL}`);
+  } else {
+    console.log(`⚠️ Používám lokální URL - nastavte BASE_URL proměnnou pro produkci`);
+  }
+  
+  console.log(`📋 Manifest addon dostupný na: ${BASE_URL}/manifest.json`);
+  console.log(`🎯 Addon ID: ${manifest.id}`);
 });
 
 module.exports = builder.getInterface();
