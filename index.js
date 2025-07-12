@@ -334,9 +334,21 @@ app.use((req, res, next) => {
   next();
 });
 
-// Integrace s addon builderem
-const addonInterface = builder.getInterface();
-app.use(addonInterface);
+// Integrace s addon builderem - použijeme serveHTTP
+app.get('/manifest.json', (req, res) => {
+  res.json(manifest);
+});
+
+app.get('/subtitles/:type/:id', async (req, res) => {
+  try {
+    const { type, id } = req.params;
+    const subtitles = await getSubtitles(type, id);
+    res.json({ subtitles });
+  } catch (error) {
+    console.error('Chyba při zpracování subtitles:', error);
+    res.json({ subtitles: [] });
+  }
+});
 
 // Spuštění serveru
 app.listen(PORT, () => {
