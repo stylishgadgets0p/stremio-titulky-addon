@@ -336,7 +336,9 @@ app.use((req, res, next) => {
 
 // Integrace s addon builderem - použijeme serveHTTP
 app.get('/manifest.json', (req, res) => {
-  res.json(manifest);
+  console.log('📋 Manifest požadavek');
+  res.setHeader('Content-Type', 'application/json');
+  res.send(JSON.stringify(manifest, null, 2));
 });
 
 app.get('/subtitles/:type/:id', async (req, res) => {
