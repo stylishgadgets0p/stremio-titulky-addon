@@ -1,8 +1,7 @@
 require('dotenv').config();
 const { addonBuilder } = require('stremio-addon-sdk');
 const axios = require('axios');
-const cheerio = require('cheerio');
-const AdmZip = require('adm-zip');
+const puppeteer = require('puppeteer');
 const express = require('express');
 const path = require('path');
 const fs = require('fs');
@@ -10,7 +9,7 @@ const os = require('os');
 
 // Konfigurace
 const PORT = process.env.PORT || 7000;
-const OMDB_API_KEY = '96c2253d'; // Hardcoded working API key
+const OMDB_API_KEY = '96c2253d';
 
 // Získání lokální IP adresy
 function getLocalIP() {
@@ -34,19 +33,19 @@ if (!fs.existsSync(subsDir)) {
   fs.mkdirSync(subsDir);
 }
 
-// Manifest
+// Beast Mode Manifest
 const manifest = {
-  id: 'community.titulkycom',
-  version: '1.0.0',
-  name: 'Titulky.com',
-  description: 'Czech subtitles from titulky.com',
+  id: 'community.titulkycom.beast',
+  version: '2.0.0',
+  name: 'Titulky.com BEAST MODE 🤖',
+  description: '8GB Puppeteer power - Anti-bot? What anti-bot?',
   resources: ['subtitles'],
   types: ['movie'],
   idPrefixes: ['tt'],
   catalogs: []
 };
 
-// Funkce pro čištění názvu filmu
+// Čištění názvu
 function cleanTitle(title) {
   return title
     .replace(/[^\w\s]/g, ' ')
@@ -55,200 +54,310 @@ function cleanTitle(title) {
     .toLowerCase();
 }
 
-// OMDB API funkce
+// OMDB funkce
 async function getMovieInfo(imdbId) {
   try {
     const response = await axios.get(`http://www.omdbapi.com/?i=${imdbId}&apikey=${OMDB_API_KEY}`);
     return response.data;
   } catch (error) {
-    console.error('Chyba při získávání dat z OMDB:', error.message);
+    console.error('❌ OMDB chyba:', error.message);
     return null;
   }
 }
 
-// Vyhledávání na titulky.com
-async function searchTitulkycom(title, year) {
+// 🤖 PUPPETEER BEAST MODE - 8GB EDITION 🤖
+async function beastModeSearch(movieTitle, movieYear) {
+  let browser;
   try {
-    console.log(`🔍 Hledám titulky pro: "${title}" (${year})`);
+    console.log(`🤖 BEAST MODE: Spouštím Chrome pro "${movieTitle}"`);
+    console.log(`💪 8GB RAM: Anti-bot ochrana se může bát!`);
     
-    const searchUrl = 'https://www.titulky.com/';
-    const response = await axios.get(searchUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 15000
+    // Launch Chrome s beast mode configem
+    browser = await puppeteer.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--no-first-run',
+        '--no-zygote',
+        '--disable-gpu',
+        '--disable-background-timer-throttling',
+        '--disable-backgrounding-occluded-windows',
+        '--disable-renderer-backgrounding',
+        '--disable-features=TranslateUI',
+        '--disable-ipc-flooding-protection',
+        '--memory-pressure-off'
+      ],
+      defaultViewport: { width: 1920, height: 1080 }
     });
 
-    const $ = cheerio.load(response.data);
-    const subtitleLinks = [];
+    const page = await browser.newPage();
     
-    // Hledání odkazů na filmy
-    $('a[href*=".htm"]').each((i, element) => {
-      const href = $(element).attr('href');
-      const text = $(element).text().trim();
+    // Advanced stealth mode
+    await page.setUserAgent('Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36');
+    await page.setViewport({ width: 1920, height: 1080 });
+    
+    // Anti-detection
+    await page.evaluateOnNewDocument(() => {
+      Object.defineProperty(navigator, 'webdriver', {
+        get: () => undefined,
+      });
+    });
+
+    console.log(`🌐 BEAST: Útočím na titulky.com`);
+    await page.goto('https://www.titulky.com/', { 
+      waitUntil: 'networkidle2',
+      timeout: 45000 
+    });
+
+    // Čekej chvilku na načtení
+    await page.waitForTimeout(2000);
+
+    console.log(`🔍 BEAST: Analyzujem stránku pro "${movieTitle}"`);
+    
+    // Najdi filmy na hlavní stránce
+    const movieMatches = await page.evaluate((title, year) => {
+      const matches = [];
       
-      if (text && href && text.toLowerCase().includes(title.toLowerCase())) {
-        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
-        subtitleLinks.push({
-          title: text,
-          url: fullUrl
-        });
-      }
-    });
-
-    console.log(`📋 Nalezeno ${subtitleLinks.length} potenciálních odkazů`);
-    return subtitleLinks;
-
-  } catch (error) {
-    console.error('❌ Chyba při vyhledávání na titulky.com:', error.message);
-    return [];
-  }
-}
-
-// Získání download odkazů z detailní stránky
-async function getDownloadLinks(pageUrl) {
-  try {
-    console.log(`🔗 Získávám download odkazy z: ${pageUrl}`);
-    
-    const response = await axios.get(pageUrl, {
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 15000
-    });
-
-    const $ = cheerio.load(response.data);
-    const downloadLinks = [];
-
-    // Hledání download odkazů
-    $('a[href*="download"], a[href*=".zip"], a[href*=".rar"], a[href*=".srt"]').each((i, element) => {
-      const href = $(element).attr('href');
-      const text = $(element).text().trim();
+      // Hledej v různých sekcích
+      const selectors = [
+        'a[href*=".htm"]',
+        '.movie-link',
+        'tr a',
+        'td a'
+      ];
       
-      if (href) {
-        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
-        downloadLinks.push({
-          title: text || 'Stáhnout titulky',
-          url: fullUrl
+      selectors.forEach(selector => {
+        const elements = document.querySelectorAll(selector);
+        elements.forEach(element => {
+          const text = element.textContent.trim();
+          const href = element.href;
+          
+          if (text && href && href.includes('.htm')) {
+            const lowerText = text.toLowerCase();
+            const lowerTitle = title.toLowerCase();
+            
+            // Fuzzy matching
+            if (lowerText.includes(lowerTitle) || 
+                lowerTitle.includes(lowerText.split(' ')[0]) ||
+                lowerText.includes(year)) {
+              matches.push({
+                text: text,
+                url: href,
+                score: lowerText.includes(lowerTitle) ? 100 : 50
+              });
+            }
+          }
         });
-      }
-    });
-
-    // Hledání dalších možných download odkazů
-    $('a').each((i, element) => {
-      const href = $(element).attr('href');
-      const text = $(element).text().trim();
-      
-      if (href && (text.includes('stáhn') || text.includes('download') || href.includes('download'))) {
-        const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
-        downloadLinks.push({
-          title: text || 'Stáhnout titulky',
-          url: fullUrl
-        });
-      }
-    });
-
-    console.log(`⬇️ Nalezeno ${downloadLinks.length} download odkazů`);
-    return downloadLinks;
-
-  } catch (error) {
-    console.error('❌ Chyba při získávání download odkazů:', error.message);
-    return [];
-  }
-}
-
-// TIMEOUT APPROACH - čeká na countdown!
-async function downloadWithTimeout(downloadUrl, movieTitle) {
-  try {
-    console.log(`⬇️ Stahuji titulky z: ${downloadUrl}`);
-    
-    // PRVNÍ POKUS - možná je to přímý link
-    try {
-      const quickResponse = await axios.get(downloadUrl, {
-        responseType: 'arraybuffer',
-        headers: {
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-        },
-        timeout: 10000
       });
       
-      // Zkontroluj jestli je to skutečný soubor
-      const contentType = quickResponse.headers['content-type'];
-      if (contentType && (contentType.includes('zip') || contentType.includes('rar') || contentType.includes('octet-stream'))) {
-        console.log(`✅ Přímý download úspěšný!`);
-        return await processDownloadedFile(quickResponse.data, movieTitle);
-      }
-    } catch (quickError) {
-      console.log(`⚠️ Přímý download neúspěšný, zkouším s timeout`);
-    }
-    
-    // TIMEOUT APPROACH - čekej na countdown
-    console.log(`⏰ TIMEOUT APPROACH: Čekám 13 sekund na countdown...`);
-    await new Promise(resolve => setTimeout(resolve, 13000));
-    
-    // Zkus znovu po čekání
-    console.log(`🔄 Zkouším download po timeout...`);
-    const response = await axios.get(downloadUrl, {
-      responseType: 'arraybuffer',
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
-      },
-      timeout: 30000
-    });
+      // Seřaď podle score
+      return matches.sort((a, b) => b.score - a.score);
+    }, movieTitle, movieYear);
 
-    return await processDownloadedFile(response.data, movieTitle);
+    console.log(`📋 BEAST: Nalezeno ${movieMatches.length} potenciálních filmů`);
+
+    if (movieMatches.length === 0) {
+      console.log(`❌ BEAST: Žádné filmy nenalezeny`);
+      return [];
+    }
+
+    // Zkus první 2 nejlepší matches
+    for (let i = 0; i < Math.min(movieMatches.length, 2); i++) {
+      const match = movieMatches[i];
+      console.log(`🎯 BEAST: Testujem match ${i+1}: ${match.text}`);
+      
+      try {
+        // Jdi na stránku filmu
+        await page.goto(match.url, { 
+          waitUntil: 'networkidle2',
+          timeout: 30000 
+        });
+
+        console.log(`🔍 BEAST: Hledám download tlačítko`);
+        await page.waitForTimeout(1000);
+
+        // Najdi download button - zkus více selektorů
+        const downloadFound = await page.evaluate(() => {
+          const selectors = [
+            'a[href*="download"]',
+            'a[href*=".zip"]',
+            'a[href*=".rar"]',
+            '.download',
+            '#download',
+            'a:contains("Stáhnout")',
+            'a:contains("Download")'
+          ];
+          
+          for (const selector of selectors) {
+            try {
+              const element = document.querySelector(selector);
+              if (element) {
+                return { found: true, selector: selector };
+              }
+            } catch (e) {}
+          }
+          
+          // Fallback - hledej text
+          const links = document.querySelectorAll('a');
+          for (const link of links) {
+            const text = link.textContent.toLowerCase();
+            if (text.includes('stáhnout') || text.includes('download') || 
+                text.includes('zip') || text.includes('rar')) {
+              return { found: true, element: link.href };
+            }
+          }
+          
+          return { found: false };
+        });
+
+        if (!downloadFound.found) {
+          console.log(`❌ BEAST: Download tlačítko nenalezeno pro ${match.text}`);
+          continue;
+        }
+
+        console.log(`🎯 BEAST: Download tlačítko nalezeno!`);
+
+        // Klikni na download
+        await page.click('a[href*="download"], a[href*=".zip"], a[href*=".rar"]');
+        
+        console.log(`⏰ BEAST: Čekám na countdown (15 sekund)...`);
+        console.log(`💪 8GB RAM: Můžu si dovolit čekat!`);
+        
+        // Počkej na countdown s extra časem
+        await page.waitForTimeout(15000);
+
+        console.log(`🔍 BEAST: Hledám finální download link`);
+
+        // Zkus najít finální download
+        const finalDownload = await page.evaluate(() => {
+          const finalSelectors = [
+            'a[href*=".zip"]:not([href*="download.php"])',
+            'a[href*=".rar"]:not([href*="download.php"])',
+            'a[download]',
+            '.final-download',
+            '#final-download'
+          ];
+          
+          for (const selector of finalSelectors) {
+            const element = document.querySelector(selector);
+            if (element && element.href) {
+              return element.href;
+            }
+          }
+          
+          // Backup - hledej v current URL
+          if (window.location.href.includes('.zip') || 
+              window.location.href.includes('.rar')) {
+            return window.location.href;
+          }
+          
+          return null;
+        });
+
+        if (finalDownload) {
+          console.log(`💾 BEAST: Finální download nalezen: ${finalDownload}`);
+          
+          // Stáhni soubor
+          const downloadPage = await browser.newPage();
+          const response = await downloadPage.goto(finalDownload, {
+            waitUntil: 'networkidle2',
+            timeout: 30000
+          });
+
+          if (response && response.ok()) {
+            const buffer = await response.buffer();
+            const fileName = `${cleanTitle(movieTitle)}_beast_${Date.now()}`;
+            
+            // Detekce typu souboru
+            let ext = '.zip';
+            const contentType = response.headers()['content-type'];
+            if (contentType) {
+              if (contentType.includes('zip')) ext = '.zip';
+              else if (contentType.includes('rar')) ext = '.rar';
+              else if (contentType.includes('text')) ext = '.srt';
+            }
+            
+            const filePath = path.join(subsDir, fileName + ext);
+            fs.writeFileSync(filePath, buffer);
+            console.log(`💾 BEAST: Soubor uložen: ${filePath}`);
+
+            // Pokus o rozbalení
+            if (ext === '.zip') {
+              try {
+                const AdmZip = require('adm-zip');
+                const zip = new AdmZip(filePath);
+                const entries = zip.getEntries();
+                
+                for (const entry of entries) {
+                  if (entry.entryName.endsWith('.srt') || entry.entryName.endsWith('.sub')) {
+                    const extractPath = path.join(subsDir, `${fileName}.srt`);
+                    fs.writeFileSync(extractPath, entry.getData());
+                    console.log(`📂 BEAST: Rozbaleno: ${extractPath}`);
+                    
+                    await downloadPage.close();
+                    
+                    return [{
+                      id: `beast_mode_${Date.now()}`,
+                      url: `${BASE_URL}/subtitles/${fileName}.srt`,
+                      lang: 'cze'
+                    }];
+                  }
+                }
+              } catch (zipError) {
+                console.log(`⚠️ BEAST: ZIP chyba, zkouším jako SRT`);
+              }
+            }
+            
+            // Fallback - rename to SRT
+            const srtPath = path.join(subsDir, `${fileName}.srt`);
+            try {
+              fs.renameSync(filePath, srtPath);
+              console.log(`✅ BEAST: Přejmenováno na SRT: ${srtPath}`);
+              
+              await downloadPage.close();
+              
+              return [{
+                id: `beast_mode_${Date.now()}`,
+                url: `${BASE_URL}/subtitles/${fileName}.srt`,
+                lang: 'cze'
+              }];
+            } catch (renameError) {
+              console.log(`❌ BEAST: Chyba přejmenování: ${renameError.message}`);
+            }
+          }
+          
+          await downloadPage.close();
+        } else {
+          console.log(`❌ BEAST: Finální download link nenalezen`);
+        }
+
+      } catch (matchError) {
+        console.error(`❌ BEAST: Chyba při zpracování ${match.text}:`, matchError.message);
+        continue;
+      }
+    }
+
+    console.log(`❌ BEAST: Všechny pokusy selhaly`);
+    return [];
 
   } catch (error) {
-    console.error('❌ Chyba při stahování s timeout:', error.message);
-    throw error;
-  }
-}
-
-// Zpracování staženého souboru
-async function processDownloadedFile(data, movieTitle) {
-  const fileName = `${cleanTitle(movieTitle)}_${Date.now()}`;
-  
-  // Detekce typu souboru
-  let fileExtension = '.zip';
-  const header = data.slice(0, 4);
-  if (header[0] === 0x50 && header[1] === 0x4B) fileExtension = '.zip';
-  else if (header[0] === 0x52 && header[1] === 0x61) fileExtension = '.rar';
-  else fileExtension = '.srt';
-
-  const filePath = path.join(subsDir, fileName + fileExtension);
-  fs.writeFileSync(filePath, data);
-  console.log(`💾 Soubor uložen: ${filePath}`);
-
-  // Pokus o rozbalení
-  if (fileExtension === '.zip') {
-    try {
-      const zip = new AdmZip(filePath);
-      const zipEntries = zip.getEntries();
-      
-      for (const entry of zipEntries) {
-        if (entry.entryName.endsWith('.srt') || entry.entryName.endsWith('.sub')) {
-          const extractPath = path.join(subsDir, `${fileName}_${entry.entryName}`);
-          fs.writeFileSync(extractPath, entry.getData());
-          console.log(`📂 Rozbalen soubor: ${extractPath}`);
-          
-          return `${BASE_URL}/subtitles/${fileName}_${entry.entryName}`;
-        }
-      }
-    } catch (zipError) {
-      console.log('⚠️ Soubor není ZIP archiv');
+    console.error(`❌ BEAST MODE ERROR: ${error.message}`);
+    return [];
+  } finally {
+    if (browser) {
+      await browser.close();
+      console.log(`🔒 BEAST: Chrome browser uzavřen`);
     }
   }
-
-  // Pokud rozbalení selhalo, vrať původní soubor jako .srt
-  const finalPath = path.join(subsDir, fileName + '.srt');
-  fs.renameSync(filePath, finalPath);
-  return `${BASE_URL}/subtitles/${fileName}.srt`;
 }
 
-// Hlavní funkce pro získání titulků
+// Hlavní funkce
 async function getSubtitles(type, id) {
   try {
-    console.log(`🎬 Zpracovávám ${type} s ID: ${id}`);
+    console.log(`🎬 BEAST MODE: Zpracovávám ${type} s ID: ${id}`);
     
     const movieInfo = await getMovieInfo(id);
     if (!movieInfo || movieInfo.Response === 'False') {
@@ -256,54 +365,21 @@ async function getSubtitles(type, id) {
       return [];
     }
 
-    console.log(`🎭 Nalezen film: ${movieInfo.Title} (${movieInfo.Year})`);
+    console.log(`🎭 BEAST: Nalezen film: ${movieInfo.Title} (${movieInfo.Year})`);
+    console.log(`🤖 BEAST: Spouštím 8GB Puppeteer útok!`);
 
-    // Vyhledání na titulky.com
-    const searchResults = await searchTitulkycom(movieInfo.Title, movieInfo.Year);
+    const subtitles = await beastModeSearch(movieInfo.Title, movieInfo.Year);
     
-    if (searchResults.length === 0) {
-      console.log('❌ Žádné titulky nenalezeny na hlavní stránce');
-      return [];
-    }
-
-    const subtitles = [];
-
-    // Zpracování prvních výsledků
-    for (let i = 0; i < Math.min(searchResults.length, 2); i++) {
-      const result = searchResults[i];
-      
-      try {
-        console.log(`🔄 Zpracovávám: ${result.title}`);
-        
-        const downloadLinks = await getDownloadLinks(result.url);
-        
-        if (downloadLinks.length > 0) {
-          console.log(`⏰ Zkouším download s timeout approach...`);
-          
-          const downloadUrl = await downloadWithTimeout(
-            downloadLinks[0].url, 
-            movieInfo.Title
-          );
-          
-          subtitles.push({
-            id: `titulkycom_timeout_${Date.now()}_${i}`,
-            url: downloadUrl,
-            lang: 'cze'
-          });
-          
-          console.log(`✅ ÚSPĚCH! Titulky staženy: ${result.title}`);
-          break; // Stačí první úspěšný
-        }
-      } catch (error) {
-        console.error(`❌ Chyba při zpracování: ${result.title}`, error.message);
-        continue;
-      }
+    if (subtitles.length > 0) {
+      console.log(`🎉 BEAST MODE ÚSPĚCH: ${subtitles.length} titulků nalezeno!`);
+    } else {
+      console.log(`😤 BEAST MODE: Ani 8GB nestačilo...`);
     }
 
     return subtitles;
 
   } catch (error) {
-    console.error('❌ Celková chyba při získávání titulků:', error.message);
+    console.error('❌ BEAST: Celková chyba:', error.message);
     return [];
   }
 }
@@ -312,13 +388,13 @@ async function getSubtitles(type, id) {
 const builder = addonBuilder(manifest);
 
 builder.defineSubtitlesHandler(async ({ type, id }) => {
-  console.log(`📥 TIMEOUT REQUEST: ${type}/${id}`);
+  console.log(`📥 BEAST REQUEST: ${type}/${id}`);
   
   try {
     const subtitles = await getSubtitles(type, id);
     return { subtitles };
   } catch (error) {
-    console.error('❌ Chyba v subtitles handleru:', error.message);
+    console.error('❌ BEAST handler chyba:', error.message);
     return { subtitles: [] };
   }
 });
@@ -349,7 +425,7 @@ app.use((req, res, next) => {
 // Debug middleware
 app.use((req, res, next) => {
   if (req.url.includes('/subtitles')) {
-    console.log(`🔥 TIMEOUT SUBTITLES REQUEST: ${req.method} ${req.url}`);
+    console.log(`🔥 BEAST SUBTITLES REQUEST: ${req.method} ${req.url}`);
   }
   next();
 });
@@ -359,50 +435,59 @@ app.use('/subtitles', express.static(subsDir));
 
 // Routes
 app.get('/', (req, res) => {
-  res.send('⏰ Timeout Titulky.com addon je spuštěn! No Puppeteer needed!');
+  res.send(`
+    🤖 BEAST MODE ADDON 🤖
+    <br>💪 8GB RAM Power
+    <br>🎯 Anti-bot? What anti-bot?
+    <br>🔥 Titulky.com has no chance!
+  `);
 });
 
 app.get('/manifest.json', (req, res) => {
-  console.log('📋 Manifest požadavek');
+  console.log('📋 BEAST: Manifest požadavek');
   res.json(manifest);
 });
 
-// Main endpoint with .json suffix (what Stremio uses)
+// Main endpoint
 app.get('/subtitles/:type/:id/:filename', async (req, res) => {
   try {
     const { type, id } = req.params;
-    console.log(`⏰ TIMEOUT FORMAT: type=${type}, id=${id}`);
+    console.log(`🤖 BEAST FORMAT: type=${type}, id=${id}`);
     const subtitles = await getSubtitles(type, id);
-    console.log(`✅ TIMEOUT: Returning ${subtitles.length} subtitles`);
+    console.log(`✅ BEAST: Returning ${subtitles.length} subtitles`);
     res.json({ subtitles });
   } catch (error) {
-    console.error('❌ Timeout chyba:', error);
+    console.error('❌ BEAST endpoint chyba:', error);
     res.json({ subtitles: [] });
   }
 });
 
-// Fallback endpoint
+// Fallback
 app.get('/subtitles/:type/:id', async (req, res) => {
   try {
     const { type, id } = req.params;
-    console.log(`⏰ TIMEOUT FALLBACK: type=${type}, id=${id}`);
+    console.log(`🤖 BEAST FALLBACK: type=${type}, id=${id}`);
     const subtitles = await getSubtitles(type, id);
     res.json({ subtitles });
   } catch (error) {
-    console.error('❌ Timeout fallback chyba:', error);
+    console.error('❌ BEAST fallback chyba:', error);
     res.json({ subtitles: [] });
   }
 });
 
-// Start server
+// Start the BEAST
 app.listen(PORT, () => {
-  console.log(`🚀 TIMEOUT ADDON běží na portu ${PORT}`);
-  console.log(`⏰ TIMEOUT APPROACH: Čeká 13 sekund na countdown!`);
-  console.log(`🎯 Manifest: ${BASE_URL}/manifest.json`);
+  console.log(`🚀 BEAST MODE ADDON běží na portu ${PORT}`);
+  console.log(`🤖 8GB RAM: Ready to destroy anti-bot protection!`);
+  console.log(`💪 Puppeteer: Loaded and dangerous!`);
+  console.log(`🎯 Target: titulky.com countdown system`);
+  console.log(`🔥 Manifest: ${BASE_URL}/manifest.json`);
   
   if (process.env.BASE_URL) {
-    console.log(`🌐 Externí URL: ${process.env.BASE_URL}`);
+    console.log(`🌐 BEAST URL: ${process.env.BASE_URL}`);
   }
+  
+  console.log(`\n🤖 BEAST MODE ACTIVATED! 🤖`);
 });
 
 module.exports = builder.getInterface();
