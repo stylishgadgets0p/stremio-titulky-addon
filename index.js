@@ -98,13 +98,12 @@ async function ultimateSearch(movieTitle, movieYear) {
 
     console.log(`📄 ULTIMATE: Parsuju search výsledky`);
 
-    // Parse search results - hledej v tabulkách a seznamech
+    // Parse search results - JEN filmové stránky, ne diskuze!
     const selectors = [
-      'table tr a[href*=".htm"]',  // výsledky v tabulce
-      '.search-result a[href*=".htm"]',  // search results
-      'tr a[href*=".htm"]',  // řádky tabulky
-      'td a[href*=".htm"]',  // buňky tabulky
-      'a[href*=".htm"]'  // fallback - všechny .htm odkazy
+      'table tr a[href*=".htm"]:not([href*="pozadavek"])',  // výsledky v tabulce, ale ne požadavky
+      '.search-result a[href*=".htm"]:not([href*="pozadavek"])',  // search results
+      'tr a[href*=".htm"]:not([href*="pozadavek"])',  // řádky tabulky
+      'td a[href*=".htm"]:not([href*="pozadavek"])'  // buňky tabulky
     ];
 
     selectors.forEach((selector, selectorIndex) => {
@@ -113,8 +112,16 @@ async function ultimateSearch(movieTitle, movieYear) {
         const href = $el.attr('href');
         const text = $el.text().trim();
         
-        if (text && href && href.includes('.htm')) {
-          console.log(`   Nalezen: "${text}" → ${href}`);
+        // EXTRA FILTER - vyfiltruj diskuze a požadavky
+        if (text && href && href.includes('.htm') && 
+            !href.includes('pozadavek') && 
+            !href.includes('forum') &&
+            !href.includes('diskuze') &&
+            text.length < 200 && // dlouhé texty = komentáře
+            !text.toLowerCase().includes('napsal') &&
+            !text.toLowerCase().includes('řekl')) {
+          
+          console.log(`   Nalezen FILM: "${text}" → ${href}`);
           
           const lowerText = text.toLowerCase()
             .replace(/[^\w\s]/g, ' ')
