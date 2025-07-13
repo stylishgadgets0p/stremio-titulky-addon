@@ -66,19 +66,26 @@ async function getMovieInfo(imdbId) {
   }
 }
 
-// Advanced search s lepším matchingem
+// Advanced search s lepším matchingem a URL fixem
 async function ultimateSearch(movieTitle, movieYear) {
   try {
     console.log(`🔍 ULTIMATE: Hledám "${movieTitle}" (${movieYear})`);
     
-    // Připrav různé varianty názvu
+    // Připrav různé varianty názvu pro přesnější matching
+    const cleanedTitle = movieTitle.toLowerCase()
+      .replace(/[^\w\s]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
     const searchVariants = [
-      movieTitle,
-      movieTitle.replace(/[^\w\s]/g, ''), // bez interpunkce
-      movieTitle.split(':')[0], // před dvojtečkou
-      movieTitle.split('(')[0].trim(), // před závorkou
-      movieTitle.toLowerCase()
+      movieTitle.toLowerCase(),
+      cleanedTitle,
+      movieTitle.split(':')[0].trim().toLowerCase(),
+      movieTitle.split('(')[0].trim().toLowerCase(),
+      movieTitle.split('-')[0].trim().toLowerCase()
     ];
+
+    console.log(`🎯 ULTIMATE: Search variants: ${searchVariants.join(', ')}`);
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -89,7 +96,6 @@ async function ultimateSearch(movieTitle, movieYear) {
       'Upgrade-Insecure-Requests': '1'
     };
 
-    // Zkus hlavní stránku
     console.log(`🌐 ULTIMATE: Načítám titulky.com`);
     const response = await axios.get('https://www.titulky.com/', {
       headers,
@@ -99,7 +105,7 @@ async function ultimateSearch(movieTitle, movieYear) {
     const $ = cheerio.load(response.data);
     const movieMatches = [];
 
-    // Lepší parsing - zkus různé selektory
+    // Lepší parsing s precizním matchingem
     const selectors = [
       'a[href*=".htm"]',
       'td a[href*=".htm"]', 
@@ -115,25 +121,67 @@ async function ultimateSearch(movieTitle, movieYear) {
         const text = $el.text().trim();
         
         if (text && href && href.includes('.htm')) {
-          // Score matching
-          let score = 0;
-          const lowerText = text.toLowerCase();
+          const lowerText = text.toLowerCase()
+            .replace(/[^\w\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
           
+          let score = 0;
+          let matched = false;
+          
+          // PŘESNĚJŠÍ MATCHING
           searchVariants.forEach(variant => {
-            const lowerVariant = variant.toLowerCase();
-            if (lowerText.includes(lowerVariant)) score += 100;
-            if (lowerVariant.includes(lowerText.split(' ')[0])) score += 50;
+            // Exact match = nejvyšší score
+            if (lowerText === variant) {
+              score += 1000;
+              matched = true;
+            }
+            // Obsahuje celý název
+            else if (lowerText.includes(variant) && variant.length > 3) {
+              score += 500;
+              matched = true;
+            }
+            // Začíná stejně (důležité pro titulky)
+            else if (lowerText.startsWith(variant) && variant.length > 3) {
+              score += 300;
+              matched = true;
+            }
+            // Obsahuje první slovo (ale jen pokud je dlouhé)
+            else if (variant.length > 4) {
+              const firstWord = variant.split(' ')[0];
+              if (firstWord.length > 3 && lowerText.includes(firstWord)) {
+                score += 100;
+                matched = true;
+              }
+            }
           });
           
-          // Bonus za rok
-          if (text.includes(movieYear)) score += 75;
+          // Bonus za rok (ale jen pokud už matchoval)
+          if (matched && text.includes(movieYear)) {
+            score += 200;
+          }
+          
+          // Penalty za moc dlouhé názvy (pravděpodobně jiný film)
+          if (lowerText.length > movieTitle.length * 2) {
+            score -= 100;
+          }
           
           if (score > 0) {
-            const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
+            // OPRAVA URL BUILDING - důležité!
+            let fullUrl;
+            if (href.startsWith('http')) {
+              fullUrl = href;
+            } else if (href.startsWith('/')) {
+              fullUrl = `https://www.titulky.com${href}`;
+            } else {
+              fullUrl = `https://www.titulky.com/${href}`;
+            }
+            
             movieMatches.push({
               title: text,
               url: fullUrl,
-              score: score
+              score: score,
+              cleanText: lowerText
             });
           }
         }
@@ -145,12 +193,18 @@ async function ultimateSearch(movieTitle, movieYear) {
     
     console.log(`📋 ULTIMATE: Nalezeno ${movieMatches.length} potenciálních filmů`);
     
-    // Debug top 3 matches
-    movieMatches.slice(0, 3).forEach((match, i) => {
-      console.log(`  ${i+1}. ${match.title} (score: ${match.score})`);
+    // Debug top matches s více detaily
+    movieMatches.slice(0, 5).forEach((match, i) => {
+      console.log(`  ${i+1}. "${match.title}" (score: ${match.score})`);
+      console.log(`      Clean: "${match.cleanText}"`);
+      console.log(`      URL: ${match.url}`);
     });
 
-    return movieMatches;
+    // FILTRUJ jen ty s vysokým score (nad 200)
+    const goodMatches = movieMatches.filter(m => m.score > 200);
+    console.log(`🎯 ULTIMATE: Filtrováno na ${goodMatches.length} kvalitních matchů`);
+
+    return goodMatches;
 
   } catch (error) {
     console.error(`❌ ULTIMATE: Search error - ${error.message}`);
