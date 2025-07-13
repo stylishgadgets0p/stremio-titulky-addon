@@ -87,7 +87,9 @@ async function ultimateSearch(movieTitle, movieYear) {
       'Referer': 'https://www.titulky.com/'
     };
 
-    console.log(`🔍 ULTIMATE: Používám search endpoint místo homepage`);
+    console.log(`🔍 ULTIMATE: Používám search endpoint s přihlášenou session`);
+    const headers = await getSessionHeaders();
+    
     const response = await axios.get(searchUrl, {
       headers,
       timeout: 20000
@@ -226,13 +228,9 @@ async function ultimateSearch(movieTitle, movieYear) {
 // Ultimate download s více strategiemi
 async function ultimateDownload(movieUrl, movieTitle) {
   try {
-    console.log(`🔗 ULTIMATE: Analyzujem stránku filmu`);
+    console.log(`🔗 ULTIMATE: Analyzujem stránku filmu s přihlášenou session`);
     
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
-      'Referer': 'https://www.titulky.com/'
-    };
+    const headers = await getSessionHeaders();
 
     const response = await axios.get(movieUrl, {
       headers,
@@ -738,14 +736,24 @@ app.get('/subtitles/:type/:id', async (req, res) => {
 });
 
 // Start the ULTIMATE
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 ULTIMATE ADDON běží na portu ${PORT}`);
-  console.log(`⚡ ULTIMATE APPROACH: Multiple timeouts + smart matching`);
-  console.log(`🎯 Target: titulky.com via pure determination`);
+  console.log(`⚡ ULTIMATE APPROACH: Multiple timeouts + smart matching + LOGIN SESSION`);
+  console.log(`🎯 Target: titulky.com via pure determination + authentication`);
   console.log(`🔥 Manifest: ${BASE_URL}/manifest.json`);
   
   if (process.env.BASE_URL) {
     console.log(`🌐 ULTIMATE URL: ${process.env.BASE_URL}`);
+  }
+  
+  // Přihlas se při startu
+  console.log(`\n🔐 ULTIMATE: Přihlašuji se k titulky.com...`);
+  const loginSuccess = await loginToTitulky();
+  
+  if (loginSuccess) {
+    console.log(`✅ ULTIMATE: Session připravena!`);
+  } else {
+    console.log(`⚠️ ULTIMATE: Login selhal, pokračuji anonymous`);
   }
   
   console.log(`\n⚡ ULTIMATE MODE ACTIVATED! ⚡`);
