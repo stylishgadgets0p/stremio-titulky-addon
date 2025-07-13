@@ -235,15 +235,17 @@ async function ultimateDownload(movieUrl, movieTitle) {
     const $ = cheerio.load(response.data);
     const downloadLinks = [];
 
-    // Aggressive selector search
+    // Aggressive selector search pro titulky.com download
     const downloadSelectors = [
+      'a[href*="idown.php"]',  // Hlavní download link na titulky.com
+      'a:contains("Stáhnout v ZIP")',  // Text tlačítka
+      'a:contains("Stáhnout")',
       'a[href*="download"]',
       'a[href*=".zip"]',
       'a[href*=".rar"]',
       'a[href*=".srt"]',
       '.download',
       '#download',
-      'a:contains("Stáhnout")',
       'a:contains("Download")',
       'a:contains("ZIP")',
       'a:contains("RAR")'
