@@ -266,7 +266,18 @@ async function ultimateDownload(movieUrl, movieTitle) {
           const text = $el.text().trim();
           
           if (href) {
-            const fullUrl = href.startsWith('http') ? href : `https://www.titulky.com${href}`;
+            // OPRAVA URL BUILDING pro idown.php
+            let fullUrl;
+            if (href.startsWith('http')) {
+              fullUrl = href;
+            } else if (href.startsWith('/')) {
+              fullUrl = `https://www.titulky.com${href}`;
+            } else if (href.startsWith('idown.php')) {
+              fullUrl = `https://www.titulky.com/${href}`;  // DŮLEŽITÉ: lomítko před idown.php
+            } else {
+              fullUrl = `https://www.titulky.com/${href}`;
+            }
+            
             downloadLinks.push({
               title: text || 'Download',
               url: fullUrl,
