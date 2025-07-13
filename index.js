@@ -413,13 +413,165 @@ async function ultimateDownload(movieUrl, movieTitle) {
               
               // Je to HTML stránka s countdown?
               if (contentType.includes('text/html')) {
-                console.log(`🌐 POPUP: HTML stránka - čekám a zkouším znovu...`);
+                console.log(`🌐 POPUP: HTML stránka - parsuju popup HTML pro download ID!`);
                 
-                // Místo volání popup simulation, prostě počkej déle
-                console.log(`⏰ POPUP: Extra čekání 5 sekund pro HTML...`);
-                await new Promise(resolve => setTimeout(resolve, 5000));
+                // DIRECT HTML PARSING APPROACH 🎯
+                try {
+                  const htmlContent = downloadResponse.data.toString();
+                  console.log(`📝 POPUP: HTML délka: ${htmlContent.length} znaků`);
+                  
+                  // Debug snippet
+                  const snippet = htmlContent.substring(0, 500);
+                  console.log(`📄 POPUP HTML snippet: ${snippet}`);
+                  
+                  let finalDownloadId = null;
+                  let finalDownloadUrl = null;
+                  
+                  // Metoda 1: RegEx pro idown.php?id=XXXXXX
+                  const idMatch = htmlContent.match(/idown\.php\?id=(\d+)/);
+                  if (idMatch) {
+                    finalDownloadId = idMatch[1];
+                    finalDownloadUrl = `https://www.titulky.com/idown.php?id=${finalDownloadId}`;
+                    console.log(`🎯 POPUP: RegEx nalezl ID: ${finalDownloadId}`);
+                  }
+                  
+                  // Metoda 2: Cheerio parsing
+                  if (!finalDownloadId) {
+                    const $popup = cheerio.load(htmlContent);
+                    
+                    // Hledej v různých atributech
+                    $popup('a, button, script').each((i, element) => {
+                      const $el = $popup(element);
+                      const href = $el.attr('href') || '';
+                      const onclick = $el.attr('onclick') || '';
+                      const innerHTML = $el.html() || '';
+                      
+                      if (href.includes('idown.php') && href.includes('id=')) {
+                        const match = href.match(/id=(\d+)/);
+                        if (match) {
+                          finalDownloadId = match[1];
+                          finalDownloadUrl = `https://www.titulky.com${href}`;
+                          console.log(`🎯 POPUP: Cheerio nalezl href ID: ${finalDownloadId}`);
+                        }
+                      }
+                      
+                      if (onclick.includes('idown.php') || innerHTML.includes('idown.php')) {
+                        const match = (onclick + innerHTML).match(/(\d{6,})/);
+                        if (match) {
+                          finalDownloadId = match[1];
+                          finalDownloadUrl = `https://www.titulky.com/idown.php?id=${finalDownloadId}`;
+                          console.log(`🎯 POPUP: Cheerio nalezl onclick/innerHTML ID: ${finalDownloadId}`);
+                        }
+                      }
+                    });
+                  }
+                  
+                  // Metoda 3: Hledej jakékoliv dlouhé číslo (backup)
+                  if (!finalDownloadId) {
+                    const numberMatch = htmlContent.match(/(\d{7,})/);
+                    if (numberMatch) {
+                      finalDownloadId = numberMatch[1];
+                      finalDownloadUrl = `https://www.titulky.com/idown.php?id=${finalDownloadId}`;
+                      console.log(`🎯 POPUP: Backup metoda nalezla číslo: ${finalDownloadId}`);
+                    }
+                  }
+                  
+                  if (finalDownloadId && finalDownloadUrl) {
+                    console.log(`✅ POPUP: Finální download URL: ${finalDownloadUrl}`);
+                    console.log(`⏰ POPUP: Čekám 12 sekund na countdown před finálním downloadem...`);
+                    
+                    // Počkej na countdown
+                    await new Promise(resolve => setTimeout(resolve, 12000));
+                    
+                    console.log(`📥 POPUP: Stahuji finální soubor po countdown`);
+                    
+                    // Finální download
+                    const finalResponse = await axios.get(finalDownloadUrl, {
+                      responseType: 'arraybuffer',
+                      headers: {
+                        ...headers,
+                        'Referer': link.url
+                      },
+                      timeout: 30000
+                    });
+                    
+                    const finalContentType = finalResponse.headers['content-type'] || '';
+                    const finalContentLength = parseInt(finalResponse.headers['content-length'] || '0');
+                    
+                    console.log(`📊 POPUP: Finální response - Type: ${finalContentType}, Size: ${finalContentLength} bytes`);
+                    
+                    if (finalContentLength > 1000 && (
+                        finalContentType.includes('zip') || 
+                        finalContentType.includes('rar') ||
+                        finalContentType.includes('octet-stream') ||
+                        finalContentType.includes('application'))) {
+                      
+                      console.log(`🎉 POPUP: SUCCESS! Získán soubor přes direct HTML parsing!`);
+                      
+                      // Zpracuj stažený soubor
+                      const fileName = `${cleanTitle(movieTitle)}_popup_${Date.now()}`;
+                      
+                      let ext = '.zip';
+                      if (finalContentType.includes('rar')) ext = '.rar';
+                      else if (finalContentType.includes('zip')) ext = '.zip';
+                      
+                      const filePath = path.join(subsDir, fileName + ext);
+                      fs.writeFileSync(filePath, finalResponse.data);
+                      console.log(`💾 POPUP: Soubor uložen: ${filePath}`);
+
+                      // Pokus o rozbalení ZIP
+                      if (ext === '.zip') {
+                        try {
+                          const zip = new AdmZip(filePath);
+                          const entries = zip.getEntries();
+                          
+                          for (const entry of entries) {
+                            if (entry.entryName.endsWith('.srt') || entry.entryName.endsWith('.sub')) {
+                              const extractPath = path.join(subsDir, `${fileName}.srt`);
+                              fs.writeFileSync(extractPath, entry.getData());
+                              console.log(`📂 POPUP: Rozbaleno: ${extractPath}`);
+                              
+                              return [{
+                                id: `popup_success_${Date.now()}`,
+                                url: `${BASE_URL}/subtitles/${fileName}.srt`,
+                                lang: 'cze'
+                              }];
+                            }
+                          }
+                        } catch (zipError) {
+                          console.log(`⚠️ POPUP: ZIP error: ${zipError.message}`);
+                        }
+                      }
+                      
+                      // Fallback - jako SRT
+                      const srtPath = path.join(subsDir, `${fileName}.srt`);
+                      try {
+                        fs.renameSync(filePath, srtPath);
+                        console.log(`✅ POPUP: Přejmenováno na SRT`);
+                        
+                        return [{
+                          id: `popup_success_${Date.now()}`,
+                          url: `${BASE_URL}/subtitles/${fileName}.srt`,
+                          lang: 'cze'
+                        }];
+                      } catch (renameError) {
+                        console.log(`❌ POPUP: Rename error: ${renameError.message}`);
+                      }
+                    } else {
+                      console.log(`⚠️ POPUP: Finální response není platný soubor`);
+                      console.log(`📄 POPUP: Response preview: ${finalResponse.data.toString().substring(0, 300)}`);
+                    }
+                  } else {
+                    console.log(`❌ POPUP: Nepodařilo se najít download ID v HTML`);
+                    console.log(`📄 POPUP: HTML pro debugging:`);
+                    console.log(htmlContent.substring(0, 1000));
+                  }
+                  
+                } catch (parseError) {
+                  console.error(`❌ POPUP: HTML parsing error: ${parseError.message}`);
+                }
                 
-                continue; // Zkus další timeout
+                continue; // Zkus další timeout pokud direct parsing selhal
               }
             }
             
