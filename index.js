@@ -12,6 +12,10 @@ const os = require('os');
 const PORT = process.env.PORT || 7000;
 const OMDB_API_KEY = '96c2253d';
 
+// Global session management
+let sessionCookies = null;
+let sessionExpiry = null;
+
 // Získání lokální IP adresy
 function getLocalIP() {
   const interfaces = os.networkInterfaces();
@@ -55,6 +59,117 @@ function cleanTitle(title) {
     .toLowerCase();
 }
 
+// Login funkce pro titulky.com - PŘESNÁ IMPLEMENTACE
+async function loginToTitulky() {
+  try {
+    const username = process.env.TITULKY_USERNAME;
+    const password = process.env.TITULKY_PASSWORD;
+    
+    if (!username || !password) {
+      console.log('⚠️ LOGIN: Chybí username nebo password v environment variables');
+      return null;
+    }
+    
+    console.log(`🔐 LOGIN: Přihlašuji se jako ${username}...`);
+    
+    // POST login data - PŘESNĚ podle HTML formu
+    const loginData = new URLSearchParams();
+    loginData.append('Login', username);          // field name: "Login"
+    loginData.append('Password', password);       // field name: "Password"
+    loginData.append('prihlasit', 'Přihlásit');  // submit button
+    loginData.append('foreverlog', '1');         // trvalé přihlášení
+    loginData.append('Detail2', '');             // hidden field
+    
+    console.log(`🔗 LOGIN: POST na https://www.titulky.com/`);
+    
+    const loginResponse = await axios.post('https://www.titulky.com/', loginData, {
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'Referer': 'https://www.titulky.com/',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'cs,en-US;q=0.7,en;q=0.3'
+      },
+      maxRedirects: 5,
+      validateStatus: (status) => status < 400
+    });
+    
+    // Získej cookies z odpovědi
+    const cookies = loginResponse.headers['set-cookie'];
+    if (cookies && cookies.length > 0) {
+      console.log('✅ LOGIN: Přihlášení úspěšné! Cookies získány.');
+      console.log(`🍪 LOGIN: ${cookies.length} cookies uloženo`);
+      
+      // Uložit session s expiry (2 hodiny)
+      sessionCookies = cookies.join('; ');
+      sessionExpiry = Date.now() + (2 * 60 * 60 * 1000); // 2 hodiny
+      
+      return sessionCookies;
+    } else {
+      console.log('❌ LOGIN: Přihlášení selhalo - žádné cookies');
+      console.log(`📄 LOGIN: Response status: ${loginResponse.status}`);
+      
+      // Debug response pro troubleshooting
+      const responseText = loginResponse.data.substring(0, 500);
+      console.log(`📝 LOGIN: Response preview: ${responseText}`);
+      
+      return null;
+    }
+    
+  } catch (error) {
+    console.log(`❌ LOGIN: Chyba při přihlašování: ${error.message}`);
+    if (error.response) {
+      console.log(`📄 LOGIN: Response status: ${error.response.status}`);
+      console.log(`📝 LOGIN: Response preview: ${error.response.data ? error.response.data.substring(0, 300) : 'No data'}`);
+    }
+    return null;
+  }
+}
+
+// Session management s auto-refresh
+async function getSessionHeaders() {
+  try {
+    // Zkontroluj jestli session existuje a není expirovaná
+    if (!sessionCookies || !sessionExpiry || Date.now() > sessionExpiry) {
+      console.log('🔄 SESSION: Session expirovala nebo neexistuje, obnovuji...');
+      sessionCookies = await loginToTitulky();
+    }
+    
+    // Základní headers
+    const baseHeaders = {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'cs,en-US;q=0.7,en;q=0.3',
+      'Accept-Encoding': 'gzip, deflate, br',
+      'Connection': 'keep-alive',
+      'Upgrade-Insecure-Requests': '1',
+      'Referer': 'https://www.titulky.com/'
+    };
+    
+    // Přidej cookies pokud existují
+    if (sessionCookies) {
+      console.log('🍪 SESSION: Používám přihlášenou session');
+      return {
+        ...baseHeaders,
+        'Cookie': sessionCookies
+      };
+    } else {
+      console.log('⚠️ SESSION: Používám anonymous session');
+      return baseHeaders;
+    }
+    
+  } catch (error) {
+    console.log(`❌ SESSION: Chyba při získávání headers: ${error.message}`);
+    // Fallback na základní headers
+    return {
+      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+      'Accept-Language': 'cs,en-US;q=0.7,en;q=0.3',
+      'Referer': 'https://www.titulky.com/'
+    };
+  }
+}
+
 // OMDB funkce
 async function getMovieInfo(imdbId) {
   try {
@@ -76,18 +191,8 @@ async function ultimateSearch(movieTitle, movieYear) {
     const searchUrl = `https://www.titulky.com/?Fulltext=${searchQuery}`;
     
     console.log(`🌐 ULTIMATE: Search URL: ${searchUrl}`);
-
-    const headers = {
-      'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-      'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-      'Accept-Language': 'cs,en-US;q=0.7,en;q=0.3',
-      'Accept-Encoding': 'gzip, deflate, br',
-      'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1',
-      'Referer': 'https://www.titulky.com/'
-    };
-
     console.log(`🔍 ULTIMATE: Používám search endpoint s přihlášenou session`);
+    
     const sessionHeaders = await getSessionHeaders();
     
     const response = await axios.get(searchUrl, {
@@ -333,7 +438,7 @@ async function ultimateDownload(movieUrl, movieTitle) {
             const downloadResponse = await axios.get(link.url, {
               responseType: 'arraybuffer',
               headers: {
-                ...headers,
+                ...sessionHeaders,
                 'Referer': movieUrl
               },
               timeout: 30000,
@@ -487,7 +592,7 @@ async function ultimateDownload(movieUrl, movieTitle) {
                     const finalResponse = await axios.get(finalDownloadUrl, {
                       responseType: 'arraybuffer',
                       headers: {
-                        ...headers,
+                        ...sessionHeaders,
                         'Referer': link.url
                       },
                       timeout: 30000
@@ -698,7 +803,7 @@ app.get('/', (req, res) => {
     ⚡ ULTIMATE TITULKY.COM ADDON ⚡
     <br>🎯 Multiple timeout strategies
     <br>🔍 Advanced search matching  
-    <br>💪 No Puppeteer needed
+    <br>💪 Session management with login
     <br>🚀 Pure determination!
   `);
 });
