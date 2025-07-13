@@ -320,17 +320,17 @@ async function ultimateDownload(movieUrl, movieTitle) {
       console.log(`🎯 ULTIMATE: Testujem download ${i+1}: ${link.title}`);
       
       try {
-        // MULTIPLE TIMEOUT STRATEGIES
+        // TIMEOUT APPROACH - čekej na countdown
         const timeouts = [0, 8000, 13000, 18000]; // 0s, 8s, 13s, 18s
         
         for (const timeout of timeouts) {
           try {
             if (timeout > 0) {
-              console.log(`⏰ ULTIMATE: Čekám ${timeout/1000} sekund na countdown...`);
+              console.log(`⏰ POPUP: Čekám ${timeout/1000} sekund na countdown...`);
               await new Promise(resolve => setTimeout(resolve, timeout));
             }
             
-            console.log(`📥 ULTIMATE: Pokus o download (timeout: ${timeout/1000}s)`);
+            console.log(`📥 POPUP: Pokus o download (timeout: ${timeout/1000}s)`);
             
             const downloadResponse = await axios.get(link.url, {
               responseType: 'arraybuffer',
@@ -346,7 +346,7 @@ async function ultimateDownload(movieUrl, movieTitle) {
             const contentType = downloadResponse.headers['content-type'] || '';
             const contentLength = parseInt(downloadResponse.headers['content-length'] || '0');
             
-            console.log(`📊 ULTIMATE: Content-Type: ${contentType}, Size: ${contentLength} bytes`);
+            console.log(`📊 POPUP: Content-Type: ${contentType}, Size: ${contentLength} bytes`);
             
             // Je to soubor?
             if (contentLength > 1000 && (
@@ -409,12 +409,19 @@ async function ultimateDownload(movieUrl, movieTitle) {
                 console.log(`❌ ULTIMATE: Rename error: ${renameError.message}`);
               }
             } else {
-              console.log(`⚠️ ULTIMATE: Neplatný soubor (velikost: ${contentLength}, typ: ${contentType})`);
+              console.log(`⚠️ POPUP: Neplatný soubor (velikost: ${contentLength}, typ: ${contentType})`);
               
               // Je to HTML stránka s countdown?
               if (contentType.includes('text/html')) {
-                console.log(`🌐 ULTIMATE: HTML stránka - pokračujem s dalším timeout`);
-                continue; // Zkus další timeout
+                console.log(`🌐 POPUP: HTML stránka - zkouším popup simulation!`);
+                
+                // Zavolej popup simulation místo čekání
+                const popupResult = await downloadWithPopupSimulation(link.url, movieTitle);
+                if (popupResult.length > 0) {
+                  return popupResult;
+                }
+                
+                continue; // Pokud popup simulation neuspěje, zkus další timeout
               }
             }
             
