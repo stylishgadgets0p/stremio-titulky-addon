@@ -10,7 +10,7 @@ const os = require('os');
 
 // Konfigurace
 const PORT = process.env.PORT || 7000;
-const OMDB_API_KEY = '96c2253d';
+const OMDB_API_KEY = '6a2085aa';
 
 // Global session management
 let sessionCookies = null;
@@ -62,8 +62,8 @@ function cleanTitle(title) {
 // Login funkce pro titulky.com - PŘESNÁ IMPLEMENTACE
 async function loginToTitulky() {
   try {
-    const username = process.env.TITULKY_USERNAME;
-    const password = process.env.TITULKY_PASSWORD;
+    const username = "rentor";
+    const password = "datartbest";
     
     if (!username || !password) {
       console.log('⚠️ LOGIN: Chybí username nebo password v environment variables');
