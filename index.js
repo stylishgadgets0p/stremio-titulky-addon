@@ -413,15 +413,13 @@ async function ultimateDownload(movieUrl, movieTitle) {
               
               // Je to HTML stránka s countdown?
               if (contentType.includes('text/html')) {
-                console.log(`🌐 POPUP: HTML stránka - zkouším popup simulation!`);
+                console.log(`🌐 POPUP: HTML stránka - čekám a zkouším znovu...`);
                 
-                // Zavolej popup simulation místo čekání
-                const popupResult = await downloadWithPopupSimulation(link.url, movieTitle);
-                if (popupResult.length > 0) {
-                  return popupResult;
-                }
+                // Místo volání popup simulation, prostě počkej déle
+                console.log(`⏰ POPUP: Extra čekání 5 sekund pro HTML...`);
+                await new Promise(resolve => setTimeout(resolve, 5000));
                 
-                continue; // Pokud popup simulation neuspěje, zkus další timeout
+                continue; // Zkus další timeout
               }
             }
             
