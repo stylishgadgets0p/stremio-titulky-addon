@@ -66,26 +66,16 @@ async function getMovieInfo(imdbId) {
   }
 }
 
-// Advanced search s lepším matchingem a URL fixem
+// Advanced search s použitím správného search endpointu
 async function ultimateSearch(movieTitle, movieYear) {
   try {
     console.log(`🔍 ULTIMATE: Hledám "${movieTitle}" (${movieYear})`);
     
-    // Připrav různé varianty názvu pro přesnější matching
-    const cleanedTitle = movieTitle.toLowerCase()
-      .replace(/[^\w\s]/g, ' ')
-      .replace(/\s+/g, ' ')
-      .trim();
+    // Připrav search query pro titulky.com
+    const searchQuery = encodeURIComponent(movieTitle.toLowerCase().trim());
+    const searchUrl = `https://www.titulky.com/?Fulltext=${searchQuery}`;
     
-    const searchVariants = [
-      movieTitle.toLowerCase(),
-      cleanedTitle,
-      movieTitle.split(':')[0].trim().toLowerCase(),
-      movieTitle.split('(')[0].trim().toLowerCase(),
-      movieTitle.split('-')[0].trim().toLowerCase()
-    ];
-
-    console.log(`🎯 ULTIMATE: Search variants: ${searchVariants.join(', ')}`);
+    console.log(`🌐 ULTIMATE: Search URL: ${searchUrl}`);
 
     const headers = {
       'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
@@ -93,11 +83,12 @@ async function ultimateSearch(movieTitle, movieYear) {
       'Accept-Language': 'cs,en-US;q=0.7,en;q=0.3',
       'Accept-Encoding': 'gzip, deflate, br',
       'Connection': 'keep-alive',
-      'Upgrade-Insecure-Requests': '1'
+      'Upgrade-Insecure-Requests': '1',
+      'Referer': 'https://www.titulky.com/'
     };
 
-    console.log(`🌐 ULTIMATE: Načítám titulky.com`);
-    const response = await axios.get('https://www.titulky.com/', {
+    console.log(`🔍 ULTIMATE: Používám search endpoint místo homepage`);
+    const response = await axios.get(searchUrl, {
       headers,
       timeout: 20000
     });
@@ -105,69 +96,80 @@ async function ultimateSearch(movieTitle, movieYear) {
     const $ = cheerio.load(response.data);
     const movieMatches = [];
 
-    // Lepší parsing s precizním matchingem
+    console.log(`📄 ULTIMATE: Parsuju search výsledky`);
+
+    // Parse search results - hledej v tabulkách a seznamech
     const selectors = [
-      'a[href*=".htm"]',
-      'td a[href*=".htm"]', 
-      'tr a[href*=".htm"]',
-      '.movie-link',
-      'table a'
+      'table tr a[href*=".htm"]',  // výsledky v tabulce
+      '.search-result a[href*=".htm"]',  // search results
+      'tr a[href*=".htm"]',  // řádky tabulky
+      'td a[href*=".htm"]',  // buňky tabulky
+      'a[href*=".htm"]'  // fallback - všechny .htm odkazy
     ];
 
-    selectors.forEach(selector => {
+    selectors.forEach((selector, selectorIndex) => {
       $(selector).each((i, element) => {
         const $el = $(element);
         const href = $el.attr('href');
         const text = $el.text().trim();
         
         if (text && href && href.includes('.htm')) {
+          console.log(`   Nalezen: "${text}" → ${href}`);
+          
           const lowerText = text.toLowerCase()
             .replace(/[^\w\s]/g, ' ')
             .replace(/\s+/g, ' ')
             .trim();
           
+          const lowerTitle = movieTitle.toLowerCase()
+            .replace(/[^\w\s]/g, ' ')
+            .replace(/\s+/g, ' ')
+            .trim();
+          
           let score = 0;
-          let matched = false;
           
-          // PŘESNĚJŠÍ MATCHING
-          searchVariants.forEach(variant => {
-            // Exact match = nejvyšší score
-            if (lowerText === variant) {
-              score += 1000;
-              matched = true;
-            }
-            // Obsahuje celý název
-            else if (lowerText.includes(variant) && variant.length > 3) {
-              score += 500;
-              matched = true;
-            }
-            // Začíná stejně (důležité pro titulky)
-            else if (lowerText.startsWith(variant) && variant.length > 3) {
-              score += 300;
-              matched = true;
-            }
-            // Obsahuje první slovo (ale jen pokud je dlouhé)
-            else if (variant.length > 4) {
-              const firstWord = variant.split(' ')[0];
-              if (firstWord.length > 3 && lowerText.includes(firstWord)) {
-                score += 100;
-                matched = true;
+          // PŘESNĚJŠÍ MATCHING PRO SEARCH RESULTS
+          if (lowerText === lowerTitle) {
+            score += 1000; // Exact match
+            console.log(`      → EXACT MATCH! Score: ${score}`);
+          }
+          else if (lowerText.includes(lowerTitle)) {
+            score += 800; // Obsahuje celý název
+            console.log(`      → Contains full title! Score: ${score}`);
+          }
+          else if (lowerTitle.includes(lowerText)) {
+            score += 600; // Název obsahuje nalezený text
+            console.log(`      → Title contains result! Score: ${score}`);
+          }
+          else {
+            // Check individual words
+            const titleWords = lowerTitle.split(' ').filter(w => w.length > 2);
+            const textWords = lowerText.split(' ').filter(w => w.length > 2);
+            
+            let matchedWords = 0;
+            titleWords.forEach(word => {
+              if (textWords.some(tw => tw.includes(word) || word.includes(tw))) {
+                matchedWords++;
               }
+            });
+            
+            if (matchedWords > 0) {
+              score += matchedWords * 100; // Body za každé matchované slovo
+              console.log(`      → Matched ${matchedWords} words! Score: ${score}`);
             }
-          });
+          }
           
-          // Bonus za rok (ale jen pokud už matchoval)
-          if (matched && text.includes(movieYear)) {
+          // Bonus za rok
+          if (text.includes(movieYear)) {
             score += 200;
+            console.log(`      → Year match bonus! Score: ${score}`);
           }
           
-          // Penalty za moc dlouhé názvy (pravděpodobně jiný film)
-          if (lowerText.length > movieTitle.length * 2) {
-            score -= 100;
-          }
+          // Bonus za to že je v search results (mělo by být relevantní)
+          score += 50;
           
           if (score > 0) {
-            // OPRAVA URL BUILDING - důležité!
+            // OPRAVA URL BUILDING
             let fullUrl;
             if (href.startsWith('http')) {
               fullUrl = href;
@@ -181,7 +183,8 @@ async function ultimateSearch(movieTitle, movieYear) {
               title: text,
               url: fullUrl,
               score: score,
-              cleanText: lowerText
+              cleanText: lowerText,
+              selector: selector
             });
           }
         }
@@ -191,20 +194,21 @@ async function ultimateSearch(movieTitle, movieYear) {
     // Seřaď podle score
     movieMatches.sort((a, b) => b.score - a.score);
     
-    console.log(`📋 ULTIMATE: Nalezeno ${movieMatches.length} potenciálních filmů`);
+    console.log(`📋 ULTIMATE: Nalezeno ${movieMatches.length} search výsledků`);
     
-    // Debug top matches s více detaily
-    movieMatches.slice(0, 5).forEach((match, i) => {
+    // Debug všechny matches
+    movieMatches.forEach((match, i) => {
       console.log(`  ${i+1}. "${match.title}" (score: ${match.score})`);
       console.log(`      Clean: "${match.cleanText}"`);
       console.log(`      URL: ${match.url}`);
+      console.log(`      Selector: ${match.selector}`);
     });
 
-    // FILTRUJ jen ty s vysokým score (nad 200)
-    const goodMatches = movieMatches.filter(m => m.score > 200);
-    console.log(`🎯 ULTIMATE: Filtrováno na ${goodMatches.length} kvalitních matchů`);
+    // Vrať top matches (bez přísného filtrování)
+    const topMatches = movieMatches.slice(0, 5);
+    console.log(`🎯 ULTIMATE: Vracím top ${topMatches.length} matchů`);
 
-    return goodMatches;
+    return topMatches;
 
   } catch (error) {
     console.error(`❌ ULTIMATE: Search error - ${error.message}`);
