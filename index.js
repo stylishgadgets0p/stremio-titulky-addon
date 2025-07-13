@@ -88,10 +88,10 @@ async function ultimateSearch(movieTitle, movieYear) {
     };
 
     console.log(`🔍 ULTIMATE: Používám search endpoint s přihlášenou session`);
-    const headers = await getSessionHeaders();
+    const sessionHeaders = await getSessionHeaders();
     
     const response = await axios.get(searchUrl, {
-      headers,
+      headers: sessionHeaders,
       timeout: 20000
     });
 
@@ -230,10 +230,10 @@ async function ultimateDownload(movieUrl, movieTitle) {
   try {
     console.log(`🔗 ULTIMATE: Analyzujem stránku filmu s přihlášenou session`);
     
-    const headers = await getSessionHeaders();
+    const sessionHeaders = await getSessionHeaders();
 
     const response = await axios.get(movieUrl, {
-      headers,
+      headers: sessionHeaders,
       timeout: 20000
     });
 
