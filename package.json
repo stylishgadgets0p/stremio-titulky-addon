@@ -1,16 +1,16 @@
 {
   "name": "stremio-titulky-addon",
-  "version": "3.0.0",
+  "version": "3.0.0", 
   "main": "index.js",
   "scripts": {
     "start": "node index.js"
   },
   "dependencies": {
     "stremio-addon-sdk": "^1.6.6",
-    "express": "^4.18.2",
-    "axios": "^1.6.0",
-    "cheerio": "^1.0.0-rc.12",
-    "adm-zip": "^0.5.10",
-    "dotenv": "^16.3.1"
+    "express": "^4.18.0",
+    "axios": "^1.0.0", 
+    "cheerio": "^1.0.0",
+    "adm-zip": "^0.5.0",
+    "dotenv": "^16.0.0"
   }
 }
